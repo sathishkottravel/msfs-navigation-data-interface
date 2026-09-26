@@ -25,7 +25,7 @@
   - `aircraft/` includes a base aircraft to test in the sim
   - `gauge/` includes a very simple TypeScript instrument to communicate with the WASM module
   - `standalone-demo/` runs the [standalone module](#running-outside-the-sim-standalone-mode) outside the sim, as a script and as a NestJS HTTP API with Swagger UI
-- `scripts/` includes the build scripts, including the [standalone build](#running-outside-the-sim-standalone-mode) and its mock data generator
+- `scripts/` includes the build scripts, including the [standalone build](#running-outside-the-sim-standalone-mode) (mock or remote data) and its mock data generator
 - `src/`
   - `ts` includes source code for the JS interface for interfacing with the WASM module
     - `transport/` includes the [transports](#using-the-js-interface-with-a-transport) used to reach the WASM module (CommBus in the sim, or the standalone module)
@@ -108,9 +108,12 @@ The default location for navigation data is `work/NavigationData`.
 
 ## Running Outside the Sim (Standalone Mode)
 
-The WASM module can also be built as a **standalone** module, which runs outside the simulator (in a browser, or in Bun/Node) and serves mock navigation data. This lets you develop and test instruments and tools against the real interface, without starting MSFS.
+The WASM module can also be built as a **standalone** module, which runs outside the simulator (in a browser, or in Bun/Node). This lets you develop and test instruments and tools against the real interface, without starting MSFS. It comes in two variants, selected by the navigation data source:
 
-The standalone module runs the same Rust core as the sim build: every function (including `ExecuteSQLQuery`) goes through the same dispatch and the same SQL queries. Only the platform-specific parts are swapped out, and the navigation data is a mock database embedded in the module.
+- **mock**: serves a mock database embedded in the module, with no network access or Navigraph account needed.
+- **remote**: serves Navigraph navigation data, downloaded through the host at runtime (see [Remote Navigation Data](#remote-navigation-data)).
+
+The standalone module runs the same Rust core as the sim build: every function (including `ExecuteSQLQuery`) goes through the same dispatch and the same SQL queries. Only the platform-specific parts are swapped out.
 
 ### Platforms
 
@@ -124,32 +127,33 @@ The Rust code is split into a shared core and a platform adapter, selected at co
                  /            \
         MsfsPlatform       StandalonePlatform
         CommBus            host import (navigraph.send_message)
-        work folder,       embedded mock database
-        bundled data,      (in-memory SQLite)
-        network download   simulated download
+        work folder,       in-memory SQLite: embedded mock
+        bundled data,      database (simulated download), or
+        network download   downloaded through the host (remote-data)
 ```
 
-| Feature          | Build command                   | Used for                                |
-| ---------------- | ------------------------------- | --------------------------------------- |
-| `msfs` (default) | `bun run build:wasm`            | The gauge in MSFS 2020 & 2024           |
-| `standalone`     | `bun run build:wasm:standalone` | Running outside the sim, with mock data |
+| Feature          | Build command                          | Output                                                                  | Used for                                     |
+| ---------------- | -------------------------------------- | ----------------------------------------------------------------------- | -------------------------------------------- |
+| `msfs` (default) | `bun run build:wasm`                   | `dist/wasm/2020/msfs_navigation_data_interface.wasm`                    | The gauge in MSFS 2020 & 2024                |
+| `standalone`     | `bun run build:wasm:standalone`        | `dist/wasm/standalone/mock/standalone_navigation_data_interface.wasm`   | Running outside the sim, with mock data      |
+| `remote-data`    | `bun run build:wasm:standalone:remote` | `dist/wasm/standalone/remote/standalone_navigation_data_interface.wasm` | Running outside the sim, with Navigraph data |
 
-The two features are mutually exclusive. The platform trait lives in [`src/wasm/src/platform`](src/wasm/src/platform/mod.rs), and the core only talks to the platform through it.
+`msfs` and `standalone` are mutually exclusive. `remote-data` implies `standalone`, and switches its navigation data source from the embedded mock data to data downloaded through the host. The build script selects it with `--data=<mock|remote>` (`mock` by default). The platform trait lives in [`src/wasm/src/platform`](src/wasm/src/platform/mod.rs), and the core only talks to the platform through it.
 
-| Behaviour                        | `msfs`                                                   | `standalone`                                                             |
-| -------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------ |
-| Messages to JS                   | CommBus                                                  | `navigraph.send_message`, imported from the host                         |
-| Navigation data                  | `work/NavigationData` (bundled or downloaded)            | Mock database, embedded in the module                                    |
-| `DownloadNavigationData`         | Downloads and installs the data from the URL             | Sends `DownloadProgress` events, then reloads the mock data (no network) |
-| `GetNavigationDataInstallStatus` | Installed cycle, and latest cycle from the Navigraph API | Cycle of the mock data                                                   |
+| Behaviour                        | `msfs`                                                   | `standalone` (mock)                                                      | `remote-data`                                                               |
+| -------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------ | --------------------------------------------------------------------------- |
+| Messages to JS                   | CommBus                                                  | `navigraph.send_message`, imported from the host                         | `navigraph.send_message`, imported from the host                            |
+| Navigation data                  | `work/NavigationData` (bundled or downloaded)            | Mock database, embedded in the module                                    | None until downloaded, then held in memory                                  |
+| `DownloadNavigationData`         | Downloads and installs the data from the URL             | Sends `DownloadProgress` events, then reloads the mock data (no network) | Downloads the data through the host (`navigraph.fetch`), then installs it   |
+| `GetNavigationDataInstallStatus` | Installed cycle, and latest cycle from the Navigraph API | Cycle of the mock data                                                   | Installed cycle, and latest cycle from the Navigraph API (through the host) |
 
 ### Building the Standalone Module
 
 1. Make sure Docker is running.
-2. Run `bun run build:wasm:standalone` at the root of the repository.
+2. Run `bun run build:wasm:standalone` (mock data) or `bun run build:wasm:standalone:remote` (remote data) at the root of the repository.
    - The first run builds the `navigation-data-interface-standalone-build` image from [`Dockerfile.standalone`](Dockerfile.standalone). It does not need the MSFS SDK.
-   - The mock navigation data is generated inside the container, right before the build (see [Mock Navigation Data](#mock-navigation-data)).
-3. The module is written to `dist/standalone/msfs_navigation_data_interface.wasm`.
+   - For mock data, the mock navigation data is generated inside the container, right before the build (see [Mock Navigation Data](#mock-navigation-data)).
+3. The module is written to `dist/wasm/standalone/<mock|remote>/standalone_navigation_data_interface.wasm`.
 
 > [!IMPORTANT]  
 > The standalone module must be built through `bun run build:wasm:standalone`. Running `cargo build --no-default-features --features standalone` directly fails, as the mock navigation data only exists in the build container.
@@ -170,6 +174,16 @@ To generate the mock data for other airports, pass them to the build (they must 
 bun run build:wasm:standalone MMMX MMGL
 ```
 
+### Remote Navigation Data
+
+The remote variant (`bun run build:wasm:standalone:remote`) starts with no navigation data: queries fail with `No database open` until data is downloaded. To load data, get a signed URL of a navigation data package through Navigraph authentication (as the [gauge example](example/gauge) does), then pass it to `download_navigation_data`:
+
+```ts
+await navigationDataInterface.download_navigation_data(pkg.file.url);
+```
+
+The module asks the host to fetch the URL, and `StandaloneTransport` does so with `fetch()`. The zip is extracted in the module, and the database is held in memory (nothing is persisted, so download again after reloading the module). In browsers, the URL must allow cross-origin requests; Bun/Node have no such restriction.
+
 ### Using the JS Interface with a Transport
 
 The JS interface talks to the WASM module through a transport, found in [`src/ts/transport`](src/ts/transport):
@@ -185,12 +199,12 @@ import { NavigraphNavigationDataInterface, TransportMode } from "@navigraph/msfs
 // In the sim (default): uses the CommBus
 const simInterface = new NavigraphNavigationDataInterface();
 
-// Outside the sim: runs the standalone module, serving mock data
+// Outside the sim: runs the standalone module (mock or remote data)
 const navigationDataInterface = new NavigraphNavigationDataInterface({
   mode: TransportMode.Standalone,
   standalone: {
     // A URL to fetch, the module bytes, a compiled WebAssembly.Module, or a fetch Response
-    wasm: "/msfs_navigation_data_interface.wasm",
+    wasm: "/standalone_navigation_data_interface.wasm",
   },
 });
 
@@ -222,8 +236,10 @@ If you are not using the JS interface, the standalone module can be driven direc
   - `navigraph_call_function(ptr, len)` queues a function call. The buffer holds a UTF-8 `NAVIGRAPH_CallFunction` payload, and ownership passes to the module.
   - `navigraph_dealloc(ptr, len)` frees a buffer which was not passed to `navigraph_call_function`.
   - `navigraph_update()` runs queued functions and sends the heartbeat. Call it regularly, like a sim frame (e.g. every 16ms).
+  - `navigraph_fetch_complete(request_id, ok, ptr, len)` (remote data only) passes the result of a `navigraph.fetch` call back to the module. The buffer comes from `navigraph_alloc` and holds the response body (`ok = 1`) or an error message (`ok = 0`). Ownership passes to the module.
 - Imports:
   - `navigraph.send_message(channel_ptr, channel_len, data_ptr, data_len)` receives `NAVIGRAPH_FunctionResult` and `NAVIGRAPH_Event` messages (UTF-8). Copy the data before returning, and avoid calling back into the module from it.
+  - `navigraph.fetch(request_id, url_ptr, url_len)` (remote data only) asks the host to GET the URL (UTF-8). Copy the URL, start the request and return; once it completes, call `navigraph_fetch_complete` with the same `request_id`.
   - `wasi_snapshot_preview1`, as the module targets `wasm32-wasip1`. Only stdout/stderr, clocks and randomness are needed; [`StandaloneTransport`](src/ts/transport/StandaloneTransport.ts) contains a minimal implementation.
 
 ## Interfacing with the gauge manually

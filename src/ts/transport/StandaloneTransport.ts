@@ -9,19 +9,21 @@ import { WasmMessageRouter } from "./WasmMessageRouter";
 export type StandaloneWasmSource = string | URL | BufferSource | WebAssembly.Module | Response | PromiseLike<Response>;
 
 export interface StandaloneTransportOptions {
-  /** The standalone build of the WASM module, which serves mock data */
+  /** The standalone build of the WASM module, which serves mock data, or Navigraph data downloaded through the host */
   wasm: StandaloneWasmSource;
   /** Milliseconds between updates of the module, the equivalent of a sim frame (default: 16) */
   updateIntervalMs?: number;
 }
 
-/** The exports of the standalone WASM module (see `src/wasm/src/standalone.rs`) */
+/** The exports of the standalone WASM module (see `src/wasm/src/platform/standalone/exports.rs`) */
 interface StandaloneExports {
   memory: WebAssembly.Memory;
   _initialize?: () => void;
   navigraph_alloc(len: number): number;
   navigraph_call_function(ptr: number, len: number): void;
   navigraph_update(): void;
+  /** Only exported by the remote data build */
+  navigraph_fetch_complete?(requestId: number, ok: number, ptr: number, len: number): void;
 }
 
 /** WASI errno values */
@@ -33,7 +35,8 @@ const ERRNO_NOSYS = 52;
 const CLOCK_REALTIME = 0;
 
 /**
- * A transport which runs the standalone build of the WASM module outside the sim, serving mock data.
+ * A transport which runs the standalone build of the WASM module outside the sim, serving mock data, or Navigraph data downloaded
+ * through the host (`fetch`) when built with remote data.
  *
  * @remarks
  * Calls are passed to the module with the same payloads as the CommBus, so they are dispatched to the same functions in the module,
@@ -111,6 +114,34 @@ export class StandaloneTransport implements NavigationDataTransport {
     messages.forEach(([channel, data]) => this.router.handleMessage(channel, data));
   }
 
+  /**
+   * Fetches a URL for the module (remote data build), then passes the response body, or an error message, back to it.
+   */
+  private async hostFetch(requestId: number, url: string): Promise<void> {
+    let ok = 1;
+    let body: Uint8Array;
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`${response.status} ${response.statusText}`);
+      }
+      body = new Uint8Array(await response.arrayBuffer());
+    } catch (error) {
+      ok = 0;
+      body = new TextEncoder().encode(error instanceof Error ? error.message : String(error));
+    }
+
+    this.runExport(exports => {
+      if (!exports.navigraph_fetch_complete) {
+        return;
+      }
+      const ptr = exports.navigraph_alloc(body.length);
+      new Uint8Array(exports.memory.buffer, ptr, body.length).set(body);
+      // The module takes ownership of the buffer
+      exports.navigraph_fetch_complete(requestId, ok, ptr, body.length);
+    });
+  }
+
   private async load(source: StandaloneWasmSource): Promise<StandaloneExports> {
     const module = await compileModule(source);
 
@@ -125,6 +156,9 @@ export class StandaloneTransport implements NavigationDataTransport {
     const navigraph = {
       send_message: (channelPtr: number, channelLen: number, dataPtr: number, dataLen: number) => {
         this.pendingMessages.push([readString(channelPtr, channelLen), readString(dataPtr, dataLen)]);
+      },
+      fetch: (requestId: number, urlPtr: number, urlLen: number) => {
+        void this.hostFetch(requestId, readString(urlPtr, urlLen));
       },
     };
 

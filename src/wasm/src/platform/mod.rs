@@ -11,7 +11,8 @@ use crate::database::CycleInfo;
 /// The MSFS gauge: CommBus, work folder, bundled data and network downloads
 #[cfg(feature = "msfs")]
 mod msfs;
-/// Runs outside the sim, serving mock navigation data generated in the standalone build container
+/// Runs outside the sim, serving mock navigation data generated in the standalone build container, or with the `remote-data`
+/// feature, Navigraph navigation data downloaded through the host
 #[cfg(feature = "standalone")]
 mod standalone;
 

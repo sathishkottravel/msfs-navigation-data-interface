@@ -65,18 +65,16 @@ if (installedSdks.versions.some(v => !v.up_to_date)) {
   await $`docker build --build-arg CACHEBUST=${Date.now()} -t ${IMAGE_NAME} -f ${resolve(workspaceRoot, "Dockerfile")} .`;
 }
 
-// Clear out dir
 const outDir = resolve(workspaceRoot, "dist/wasm");
-
-if (existsSync(outDir)) rmdirSync(outDir, { recursive: true });
 
 // The work directory, relative to workspace root
 const relativeWorkdDir = process.cwd().replace(workspaceRoot, "").replaceAll("\\", "/");
 
 console.info(`[*] Building for 2020`);
 
-// Create the subfolder
+// Clear out and create the subfolder (other subfolders, such as the standalone builds, are kept)
 const simDir = join(outDir, "2020");
+if (existsSync(simDir)) rmdirSync(simDir, { recursive: true });
 const relativeSimDir = simDir.replace(workspaceRoot, "").replaceAll("\\", "/");
 mkdirSync(simDir, { recursive: true });
 

@@ -5,7 +5,9 @@ Runs the standalone build of the WASM module outside the sim, through the JS int
 - A **script** (`index.ts`) which prints some mock navigation data.
 - An **HTTP API** (`server.ts`, built with NestJS) which serves the mock navigation data, with an OpenAPI spec and Swagger UI.
 
-Both serve mock data: only the airports the mock data was generated for (`MMUN`, `MMMD` and `MSLP` by default) and their surroundings are available. See [Running Outside the Sim](../../README.md#running-outside-the-sim-standalone-mode) for how the mock data is built.
+Both serve mock data by default: only the airports the mock data was generated for (`MMUN`, `MMMD` and `MSLP` by default) and their surroundings are available. See [Running Outside the Sim](../../README.md#running-outside-the-sim-standalone-mode) for how the mock data is built.
+
+To serve Navigraph data instead, build the remote data variant (`bun run build:wasm:standalone:remote`), and set `NAVIGRAPH_WASM_PATH` to `dist/wasm/standalone/remote/standalone_navigation_data_interface.wasm` and `NAVIGRAPH_NAVDATA_URL` to a signed navigation data package URL. The data is downloaded at startup.
 
 ## Prerequisites
 
@@ -15,7 +17,7 @@ Build the standalone module (requires Docker) at the root of the repository:
 bun run build:wasm:standalone
 ```
 
-This writes `dist/standalone/msfs_navigation_data_interface.wasm`, which the demo loads. The demo imports the JS interface from source (`src/ts`), so the package doesn't need to be built.
+This writes `dist/wasm/standalone/mock/standalone_navigation_data_interface.wasm`, which the demo loads. The demo imports the JS interface from source (`src/ts`), so the package doesn't need to be built.
 
 ## Script
 
@@ -35,10 +37,11 @@ bun run serve
 
 Then open http://localhost:3000/docs for the Swagger UI. The spec, generated from the controllers by `@nestjs/swagger`, is served at `/openapi.json`.
 
-| Environment variable   | Default                                                  | Description                   |
-| ---------------------- | -------------------------------------------------------- | ----------------------------- |
-| `PORT`                 | `3000`                                                   | Port to listen on             |
-| `NAVIGRAPH_WASM_PATH`  | `dist/standalone/msfs_navigation_data_interface.wasm`    | Path of the standalone module |
+| Environment variable    | Default                                                               | Description                                                                         |
+| ----------------------- | --------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `PORT`                  | `3000`                                                                | Port to listen on                                                                   |
+| `NAVIGRAPH_WASM_PATH`   | `dist/wasm/standalone/mock/standalone_navigation_data_interface.wasm` | Path of the standalone module (also used by the script)                             |
+| `NAVIGRAPH_NAVDATA_URL` | (none)                                                                | Signed navigation data package URL to download at startup (also used by the script) |
 
 ### Endpoints
 

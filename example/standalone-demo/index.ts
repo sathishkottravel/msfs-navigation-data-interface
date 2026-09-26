@@ -3,7 +3,11 @@ import { loadNavigationData } from "./src/loadNavigationData";
 /// Must be one of the airports the mock data was generated for (MMUN, MMMD and MSLP by default)
 const AIRPORT = (process.argv[2] ?? "MMUN").toUpperCase();
 
-const { navigationDataInterface, transport } = await loadNavigationData().catch((error: unknown) => {
+const { navigationDataInterface, transport } = await loadNavigationData(
+  process.env.NAVIGRAPH_WASM_PATH,
+  undefined,
+  process.env.NAVIGRAPH_NAVDATA_URL,
+).catch((error: unknown) => {
   console.error("[-]", error instanceof Error ? error.message : error);
   process.exit(1);
 });

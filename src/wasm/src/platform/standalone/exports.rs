@@ -58,6 +58,26 @@ pub unsafe extern "C" fn navigraph_call_function(ptr: *mut u8, len: usize) {
     });
 }
 
+/// Pass the result of a `navigraph.fetch` import call back to the module. Takes ownership of the buffer.
+///
+/// * `ok` - 1 if the buffer holds the response body, 0 if it holds an error message
+///
+/// # Safety
+/// `ptr` and `len` must come from a single call to `navigraph_alloc`, with all `len` bytes written
+#[cfg(feature = "remote-data")]
+#[no_mangle]
+pub unsafe extern "C" fn navigraph_fetch_complete(request_id: u32, ok: u32, ptr: *mut u8, len: usize) {
+    let data = Vec::from_raw_parts(ptr, len, len);
+
+    let result = if ok != 0 {
+        Ok(data)
+    } else {
+        Err(String::from_utf8_lossy(&data).into_owned())
+    };
+
+    super::remote::complete_fetch(request_id, result);
+}
+
 /// Run queued functions and send the heartbeat when due. The host should call this once per frame.
 #[no_mangle]
 pub extern "C" fn navigraph_update() {

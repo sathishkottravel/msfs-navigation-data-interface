@@ -13,6 +13,9 @@ msfs = ["dep:msfs", "dep:dotenv_codegen", "dep:uuid", "dep:zip"]
 # Runs outside the sim, serving mock navigation data. Build with `bun run build:wasm:standalone`, which generates the mock data in
 # the build container and runs `cargo build --no-default-features --features standalone`
 standalone = ["rusqlite/serialize"]
+# Runs outside the sim, serving Navigraph navigation data downloaded through the host at runtime instead of mock data.
+# Build with `bun run build:wasm:standalone:remote`
+remote-data = ["standalone", "dep:zip"]
 
 [dependencies]
 anyhow = "1.0.97"
