@@ -6,7 +6,7 @@ import { NavigationDataService } from "../src/NavigationDataService";
 import { expectRejection, readJson, startApp } from "./helpers";
 
 interface OpenApiSpec {
-  paths: Record<string, { get: { parameters?: { name: string; in: string; schema: { example?: unknown } }[] } }>;
+  paths: Record<string, { get?: { parameters?: { name: string; in: string; schema: { example?: unknown } }[] } }>;
 }
 
 /// Runs against the real standalone module, so it is skipped until `bun run build:wasm:standalone` has been run
@@ -42,6 +42,10 @@ describe.skipIf(!existsSync(DEFAULT_WASM_PATH))("NavigationDataService with the 
     expect(nearby.map(a => a.ident)).toContain("MMUN");
   });
 
+  test("detects the mock data build", () => {
+    expect(loaded.dataSource).toBe("mock");
+  });
+
   test("reports airports outside the mock data as not found", async () => {
     await expectRejection(service.getAirport("EGLL"), NotFoundError);
   });
@@ -52,6 +56,9 @@ describe.skipIf(!existsSync(DEFAULT_WASM_PATH))("NavigationDataService with the 
     try {
       const spec = await readJson<OpenApiSpec>(await fetch(`${baseUrl}/openapi.json`));
       for (const [path, item] of Object.entries(spec.paths)) {
+        // Only GET endpoints can be called from their examples alone
+        if (!item.get) continue;
+
         // Fill each parameter with its documented example
         let url = path;
         const query = new URLSearchParams();

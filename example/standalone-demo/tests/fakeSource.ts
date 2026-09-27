@@ -14,6 +14,9 @@ export const RW12L = { ident: "RW12L", length: 11483 } as RunwayThreshold;
 
 export const CUN_WAYPOINT = { ident: "CUN", location: { lat: 21.03, long: -86.86 } } as Waypoint;
 
+/** URLs containing this fail to download, like an expired signed URL */
+export const FAILING_URL_MARKER = "expired";
+
 /**
  * An in-memory stand-in for the JS interface, holding one airport (MMUN) and one waypoint (CUN).
  * Records the arguments of each call, so tests can check what the service passed on.
@@ -32,6 +35,10 @@ export function createFakeSource() {
       calls.push({ method: "execute_sql", args: [sql, params] });
       return Promise.resolve((params[0] === MMUN.ident ? [{ ident: MMUN.ident }] : []) as T[]);
     },
+    download_navigation_data: (url: string) => {
+      calls.push({ method: "download_navigation_data", args: [url] });
+      return url.includes(FAILING_URL_MARKER) ? Promise.reject(new Error("403 Forbidden")) : Promise.resolve();
+    },
     get_database_info: record("get_database_info", {
       airac_cycle: "2401",
       effective_from_to: ["25-01-2024", "21-02-2024"] as [string, string],
@@ -40,6 +47,8 @@ export function createFakeSource() {
     get_navigation_data_install_status: record("get_navigation_data_install_status", {
       status: "Manual",
       installedPath: "mock-navdata.sqlite",
+      installedCycle: "2401",
+      latestCycle: "2402",
     } as Awaited<ReturnType<NavigationDataSource["get_navigation_data_install_status"]>>),
     get_airport: record("get_airport", MMUN),
     get_airports_in_range: record("get_airports_in_range", [MMUN]),

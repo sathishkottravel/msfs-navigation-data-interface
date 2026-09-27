@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { NavigraphNavigationDataInterface, StandaloneTransport } from "./navigraph";
+import type { DataSource } from "./RemoteConfigService";
 
 /// The standalone module with mock data, as written by `bun run build:wasm:standalone`
 export const DEFAULT_WASM_PATH = fileURLToPath(
@@ -11,6 +12,8 @@ export interface LoadedNavigationData {
   navigationDataInterface: NavigraphNavigationDataInterface;
   /** Drives the module on an interval, which keeps the process alive until it is disposed */
   transport: StandaloneTransport;
+  /** Whether the module is the mock or remote data build */
+  dataSource: DataSource;
 }
 
 /**
@@ -38,14 +41,20 @@ export async function loadNavigationData(
   return loaded;
 }
 
-function waitUntilReady(wasmPath: string, timeoutMs: number): Promise<LoadedNavigationData> {
+async function waitUntilReady(wasmPath: string, timeoutMs: number): Promise<LoadedNavigationData> {
   if (!existsSync(wasmPath)) {
-    return Promise.reject(
-      new Error(`${wasmPath} not found. Run \`bun run build:wasm:standalone\` at the root of the repository first.`),
+    throw new Error(
+      `${wasmPath} not found. Run \`bun run build:wasm:standalone\` at the root of the repository first.`,
     );
   }
 
-  const transport = new StandaloneTransport({ wasm: readFileSync(wasmPath) });
+  // Compiled here, rather than by the transport, to tell the builds apart: only the remote data build takes fetch results
+  const module = await WebAssembly.compile(readFileSync(wasmPath));
+  const dataSource: DataSource = WebAssembly.Module.exports(module).some(e => e.name === "navigraph_fetch_complete")
+    ? "remote"
+    : "mock";
+
+  const transport = new StandaloneTransport({ wasm: module });
   const navigationDataInterface = new NavigraphNavigationDataInterface(transport);
 
   return new Promise((resolve, reject) => {
@@ -56,7 +65,7 @@ function waitUntilReady(wasmPath: string, timeoutMs: number): Promise<LoadedNavi
 
     navigationDataInterface.onReady(() => {
       clearTimeout(timeout);
-      resolve({ navigationDataInterface, transport });
+      resolve({ navigationDataInterface, transport, dataSource });
     });
   });
 }

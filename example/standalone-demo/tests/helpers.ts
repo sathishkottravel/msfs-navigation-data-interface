@@ -3,6 +3,7 @@ import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { createApp } from "../src/app.module";
 import type { NavigationDataSource } from "../src/NavigationDataService";
+import type { DataSource } from "../src/RemoteConfigService";
 
 /** Asserts that the promise rejects with an instance of the given error class */
 export async function expectRejection(promise: Promise<unknown>, errorClass: new (...args: never[]) => Error) {
@@ -14,8 +15,8 @@ export async function expectRejection(promise: Promise<unknown>, errorClass: new
 }
 
 /** Starts the app with the given navigation data on a free port. Close it with `app.close()`. */
-export async function startApp(source: NavigationDataSource) {
-  const app = await createApp(source, { logger: false });
+export async function startApp(source: NavigationDataSource, dataSource: DataSource = "mock") {
+  const app = await createApp(source, { logger: false, dataSource });
   await app.listen(0);
   const { port } = (app.getHttpServer() as Server).address() as AddressInfo;
   return { app, baseUrl: `http://localhost:${port}` };

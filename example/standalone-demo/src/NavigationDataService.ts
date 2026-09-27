@@ -20,6 +20,7 @@ import { NotFoundError, ValidationError } from "./errors";
 export type NavigationDataSource = Pick<
   NavigraphNavigationDataInterface,
   | "execute_sql"
+  | "download_navigation_data"
   | "get_database_info"
   | "get_navigation_data_install_status"
   | "get_airport"
